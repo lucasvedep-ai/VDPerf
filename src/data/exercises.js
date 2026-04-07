@@ -1,0 +1,25 @@
+export const exercises = [
+  { id: 'bench-press', name: 'Bench Press', group: 'chest', type: 'upper' },
+  { id: 'barbell-row', name: 'Barbell Row', group: 'back', type: 'upper' },
+  { id: 'overhead-press', name: 'Overhead Press', group: 'shoulders', type: 'upper' },
+  { id: 'pull-ups', name: 'Pull-ups', group: 'back', type: 'upper' },
+  { id: 'triceps-pushdown', name: 'Triceps Pushdown', group: 'triceps', type: 'upper' },
+  { id: 'barbell-curl', name: 'Barbell Curl', group: 'biceps', type: 'upper' },
+  { id: 'incline-db-press', name: 'Incline DB Press', group: 'chest', type: 'upper' },
+  { id: 'cable-row', name: 'Cable Row', group: 'back', type: 'upper' },
+  { id: 'db-lateral-raise', name: 'DB Lateral Raise', group: 'shoulders', type: 'upper' },
+  { id: 'face-pull', name: 'Face Pull', group: 'shoulders', type: 'upper' },
+  { id: 'dips', name: 'Dips', group: 'chest', type: 'upper' },
+  { id: 'hammer-curl', name: 'Hammer Curl', group: 'biceps', type: 'upper' },
+  { id: 'squat', name: 'Squat', group: 'quads', type: 'lower' },
+  { id: 'romanian-deadlift', name: 'Romanian Deadlift', group: 'hamstrings', type: 'lower' },
+  { id: 'leg-press', name: 'Leg Press', group: 'quads', type: 'lower' },
+  { id: 'leg-curl', name: 'Leg Curl', group: 'hamstrings', type: 'lower' },
+  { id: 'calf-raise', name: 'Calf Raise', group: 'calves', type: 'lower' },
+  { id: 'deadlift', name: 'Deadlift', group: 'back', type: 'lower' },
+  { id: 'bulgarian-split-squat', name: 'Bulgarian Split Squat', group: 'quads', type: 'lower' },
+  { id: 'leg-extension', name: 'Leg Extension', group: 'quads', type: 'lower' },
+  { id: 'nordic-curl', name: 'Nordic Curl', group: 'hamstrings', type: 'lower' },
+];
+
+export const exerciseMap = Object.fromEntries(exercises.map(e => [e.id, e]));
