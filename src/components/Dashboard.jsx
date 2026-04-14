@@ -1,222 +1,169 @@
-import { useState } from 'react';
-import { planMap, planOrder } from '../data/workoutPlans.js';
-import { exerciseMap } from '../data/exercises.js';
-import { calculateAdherence, estimate1RM, getNextPlanId } from '../utils/calculations.js';
-import { bonusSessionTemplates } from '../data/bonusTemplates.js';
-import SessionPreview from './SessionPreview.jsx';
-import AppleMusicPlayer from './AppleMusicPlayer.jsx';
+import { useState, useMemo } from 'react';
+import { Fire, Award, TrendingUp, Calendar } from 'lucide-react';
+import { planMap } from '../data/workoutPlans.js';
+import SessionSelector from './SessionSelector.jsx';
 
 export default function Dashboard({ store }) {
-  const { sessions, startSession } = store;
   const [showSessionSelector, setShowSessionSelector] = useState(false);
-  const [previewSession, setPreviewSession] = useState(null);
-  const completed = sessions.filter(s => s.status === 'completed');
+  const { sessions = [] } = store || {};
+  const completed = sessions.filter(s => s?.status === 'completed') || [];
 
-  const nextPlanId = getNextPlanId(sessions, planOrder);
-  const nextPlan = planMap[nextPlanId];
-  const adherence = calculateAdherence(sessions);
+  // Calculer les stats
+  const stats = useMemo(() => {
+    const totalVolume = completed.reduce((sum, s) => {
+      return sum + (s.exercises || []).reduce((exSum, ex) => {
+        return exSum + (ex.sets || []).reduce((setSum, set) => {
+          return setSum + (set.weight || 0) * (set.reps || 0);
+        }, 0);
+      }, 0);
+    }, 0);
 
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - 7);
-  const weeklyVolume = completed
-    .filter(s => new Date(s.date) >= cutoff)
-    .flatMap(s => s.exercises.flatMap(e => e.sets))
-    .reduce((total, set) => total + set.weight * set.reps, 0);
+    const totalSessions = completed.length;
+    const avgSessionVolume = totalSessions > 0 ? totalVolume / totalSessions : 0;
+    const totalSets = completed.reduce((sum, s) => {
+      return sum + (s.exercises || []).reduce((exSum, ex) => exSum + (ex.sets || []).length, 0);
+    }, 0);
 
-  const mainLifts = ['bench-press', 'squat', 'deadlift'];
-  const bestLifts = mainLifts.map(exerciseId => {
-    const allSets = completed.flatMap(
-      s => s.exercises.find(e => e.exerciseId === exerciseId)?.sets ?? []
-    );
-    if (allSets.length === 0) return { exerciseId, e1rm: null };
-    const best = allSets.reduce((best, set) =>
-      estimate1RM(set.weight, set.reps) > estimate1RM(best.weight, best.reps) ? set : best
-    );
-    return { exerciseId, e1rm: estimate1RM(best.weight, best.reps) };
-  });
+    return { totalVolume, totalSessions, avgSessionVolume, totalSets };
+  }, [completed]);
 
-  const recentSessions = [...completed]
-    .sort((a, b) => new Date(b.date) - new Date(a.date))
-    .slice(0, 5);
+  // Calculer streak (jours consécutifs d'entraînement)
+  const streak = useMemo(() => {
+    if (completed.length === 0) return 0;
 
-  const formatVolume = (v) =>
-    v >= 1000 ? `${(v / 1000).toFixed(1)}k kg` : `${v} kg`;
+    const dates = completed
+      .map(s => new Date(s.date))
+      .sort((a, b) => b - a);
 
-  if (previewSession) {
-    return (
-      <SessionPreview
-        session={previewSession}
-        onStart={(session) => {
-          startSession(session.id || session.planId, session);
-          setPreviewSession(null);
-        }}
-        onBack={() => setPreviewSession(null)}
-      />
-    );
-  }
+    let current = 0;
+    let lastDate = new Date();
+
+    for (const date of dates) {
+      const diffDays = Math.floor((lastDate - date) / (1000 * 60 * 60 * 24));
+      if (diffDays <= 1) {
+        current++;
+        lastDate = date;
+      } else {
+        break;
+      }
+    }
+
+    return current;
+  }, [completed]);
+
+  // Calculer badges
+  const badges = useMemo(() => {
+    const earned = [];
+
+    if (totalSessions >= 1) earned.push({ name: '🚀 Starter', desc: 'Première séance' });
+    if (totalSessions >= 10) earned.push({ name: '💪 Grinder', desc: '10 séances complétées' });
+    if (totalSessions >= 25) earned.push({ name: '⚡ Machine', desc: '25 séances complétées' });
+    if (totalSessions >= 50) earned.push({ name: '🏆 Legend', desc: '50 séances complétées' });
+    if (streak >= 7) earned.push({ name: '🔥 Week Warrior', desc: '7 jours consécutifs' });
+    if (streak >= 30) earned.push({ name: '😤 Iron', desc: '30 jours consécutifs' });
+    if (Math.round(totalVolume) >= 50000) earned.push({ name: '🌊 Volume King', desc: '50k kg levés' });
+
+    return earned;
+  }, [completed, totalSessions, streak]);
+
+  const { totalVolume, totalSessions, avgSessionVolume, totalSets } = stats;
 
   if (showSessionSelector) {
-    return (
-      <div className="p-6">
-        <button
-          onClick={() => setShowSessionSelector(false)}
-          className="text-blue-400 mb-6 font-bold"
-        >
-          ← Retour
-        </button>
-
-        <h2 className="text-2xl font-bold mb-6">Sélectionne ta séance</h2>
-
-        {/* Standard Sessions */}
-        <h3 className="text-sm font-bold text-gray-400 uppercase mb-3">Programmes Standards</h3>
-        <div className="space-y-3 mb-8">
-          {planOrder.map((planId) => {
-            const plan = planMap[planId];
-            return (
-              <button
-                key={planId}
-                onClick={() => setPreviewSession(plan)}
-                className="w-full bg-gray-900 border-l-4 border-blue-600 p-4 rounded text-left hover:bg-gray-800 transition"
-              >
-                <div className="font-bold">{plan.name}</div>
-                <div className="text-xs text-gray-400">{plan.focus}</div>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Bonus Sessions */}
-        <h3 className="text-sm font-bold text-gray-400 uppercase mb-3">Bonus ({bonusSessionTemplates.length})</h3>
-        <div className="space-y-3">
-          {bonusSessionTemplates.map((template) => (
-            <button
-              key={template.id}
-              onClick={() => setPreviewSession(template)}
-              className="w-full bg-gray-900 border-l-4 border-amber-600 p-4 rounded text-left hover:bg-gray-800 transition"
-            >
-              <div className="font-bold">{template.name}</div>
-              <div className="text-xs text-gray-400">{template.description}</div>
-            </button>
-          ))}
-        </div>
-      </div>
-    );
+    return <SessionSelector store={store} onBack={() => setShowSessionSelector(false)} />;
   }
 
   return (
-    <div className="p-4 space-y-6">
-      <div className="pt-8">
-        <h1 className="text-2xl font-bold tracking-tight">VDPerf</h1>
-        <p className="text-gray-400 text-sm capitalize">
-          {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
-        </p>
+    <div className="p-6 pb-24 bg-gray-950 min-h-screen">
+      {/* Header Premium */}
+      <div className="mb-8">
+        <h1 className="text-4xl font-black bg-gradient-to-r from-blue-400 to-blue-600 bg-clip-text text-transparent mb-2">
+          VDPerf
+        </h1>
+        <p className="text-gray-400 text-sm">Entraînement Intelligent • Progression Garantie</p>
       </div>
 
-      {/* Apple Music Player */}
-      <AppleMusicPlayer />
+      {/* Streak & Stats Premium */}
+      <div className="grid grid-cols-2 gap-4 mb-6">
+        {/* Streak */}
+        <div className="bg-gradient-to-br from-red-600/20 to-orange-600/20 border border-orange-500/50 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Fire className="w-5 h-5 text-orange-400" />
+            <span className="text-xs text-gray-400 font-bold">STREAK</span>
+          </div>
+          <p className="text-3xl font-black text-orange-400">{streak}</p>
+          <p className="text-xs text-gray-400 mt-1">jours consécutifs 🔥</p>
+        </div>
 
-      {/* Next workout card */}
-      <div className="bg-indigo-600 rounded-2xl p-5">
-        <p className="text-indigo-200 text-xs font-semibold uppercase tracking-widest">
-          Prochain entraînement
-        </p>
-        <h2 className="text-xl font-bold mt-1">
-          {nextPlan.name} — {nextPlan.focus}
-        </h2>
-        <p className="text-indigo-200 text-sm mt-0.5">
-          {nextPlan.exercises.length} exercices
-        </p>
-        <div className="flex gap-3 mt-4">
-          <button
-            onClick={() => setPreviewSession(nextPlan)}
-            className="flex-1 bg-white text-indigo-600 font-semibold px-4 py-2 rounded-xl text-sm hover:bg-indigo-50 transition"
-          >
-            Lancer
-          </button>
-          <button
-            onClick={() => setShowSessionSelector(true)}
-            className="flex-1 bg-indigo-700 text-white font-semibold px-4 py-2 rounded-xl text-sm hover:bg-indigo-800 transition"
-          >
-            Choisir
-          </button>
+        {/* Sessions */}
+        <div className="bg-gradient-to-br from-blue-600/20 to-cyan-600/20 border border-blue-500/50 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Calendar className="w-5 h-5 text-blue-400" />
+            <span className="text-xs text-gray-400 font-bold">SESSIONS</span>
+          </div>
+          <p className="text-3xl font-black text-blue-400">{totalSessions}</p>
+          <p className="text-xs text-gray-400 mt-1">complétées ✅</p>
         </div>
       </div>
 
-      {/* KPI cards */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="bg-green-950/60 border border-green-900/40 rounded-2xl p-4">
-          <p className="text-green-400 text-xs font-semibold uppercase tracking-wider">Adhérence</p>
-          <p className="text-2xl font-bold text-green-300 mt-1">{adherence}%</p>
-          <p className="text-green-500 text-xs mt-1">4 dernières semaines</p>
+      {/* KPIs Principales */}
+      <div className="grid grid-cols-3 gap-3 mb-8">
+        <div className="bg-gray-900/50 border border-gray-800 rounded-lg p-3">
+          <p className="text-xs text-gray-500 mb-1">Volume</p>
+          <p className="text-xl font-black text-white">{(totalVolume / 1000).toFixed(1)}k</p>
+          <p className="text-xs text-gray-500 mt-1">kg total</p>
         </div>
-        <div className="bg-blue-950/60 border border-blue-900/40 rounded-2xl p-4">
-          <p className="text-blue-400 text-xs font-semibold uppercase tracking-wider">Volume hebdo</p>
-          <p className="text-2xl font-bold text-blue-300 mt-1">{formatVolume(weeklyVolume)}</p>
-          <p className="text-blue-500 text-xs mt-1">7 derniers jours</p>
+
+        <div className="bg-gray-900/50 border border-gray-800 rounded-lg p-3">
+          <p className="text-xs text-gray-500 mb-1">Moy/Séance</p>
+          <p className="text-xl font-black text-white">{(avgSessionVolume / 1000).toFixed(1)}k</p>
+          <p className="text-xs text-gray-500 mt-1">kg/séance</p>
+        </div>
+
+        <div className="bg-gray-900/50 border border-gray-800 rounded-lg p-3">
+          <p className="text-xs text-gray-500 mb-1">Séries</p>
+          <p className="text-xl font-black text-white">{totalSets}</p>
+          <p className="text-xs text-gray-500 mt-1">totales</p>
         </div>
       </div>
 
-      {/* Best lifts */}
-      <div>
-        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">
-          1RM estimé — meilleurs lifts
-        </h3>
-        <div className="space-y-2">
-          {bestLifts.map(({ exerciseId, e1rm }) => (
-            <div
-              key={exerciseId}
-              className="flex items-center justify-between bg-gray-900 rounded-xl px-4 py-3"
-            >
-              <span className="font-medium text-sm">{exerciseMap[exerciseId]?.name}</span>
-              <span className="font-bold text-indigo-400">
-                {e1rm !== null ? `${e1rm} kg` : '—'}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Recent sessions */}
-      {recentSessions.length > 0 && (
-        <div>
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">
-            Séances récentes
-          </h3>
-          <div className="space-y-2">
-            {recentSessions.map(session => {
-              const plan = planMap[session.planId];
-              const totalSets = session.exercises.reduce((t, e) => t + e.sets.length, 0);
-              const vol = session.exercises.flatMap(e => e.sets).reduce((t, s) => t + s.weight * s.reps, 0);
-              const duration = session.endTime
-                ? Math.round((session.endTime - session.startTime) / 60000)
-                : null;
-              return (
-                <div
-                  key={session.id}
-                  className="flex items-center justify-between bg-gray-900 rounded-xl px-4 py-3"
-                >
-                  <div>
-                    <p className="font-medium text-sm">{plan?.name} — {plan?.focus}</p>
-                    <p className="text-gray-500 text-xs mt-0.5">
-                      {new Date(session.date).toLocaleDateString('fr-FR')}
-                      {' · '}{totalSets} séries
-                      {duration ? ` · ${duration} min` : ''}
-                    </p>
-                  </div>
-                  <span className="text-sm text-gray-400 font-medium">{formatVolume(vol)}</span>
-                </div>
-              );
-            })}
+      {/* Badges Section */}
+      {badges.length > 0 && (
+        <div className="mb-8">
+          <h2 className="text-sm font-black text-gray-400 uppercase mb-3 flex items-center gap-2">
+            <Award className="w-4 h-4" />
+            Badges Débloqués
+          </h2>
+          <div className="grid grid-cols-2 gap-2">
+            {badges.map((badge, idx) => (
+              <div
+                key={idx}
+                className="bg-gradient-to-br from-yellow-600/20 to-amber-600/20 border border-yellow-500/50 rounded-lg p-3"
+              >
+                <p className="text-2xl mb-1">{badge.name.split(' ')[0]}</p>
+                <p className="text-xs text-gray-400">{badge.desc}</p>
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {completed.length === 0 && (
-        <div className="text-center py-8 text-gray-600">
-          <p className="text-sm">Aucune séance enregistrée.</p>
-          <p className="text-sm">Lance ton premier entraînement ci-dessus.</p>
-        </div>
-      )}
+      {/* Prochaine Séance */}
+      <div className="mb-6">
+        <h2 className="text-sm font-black text-gray-400 uppercase mb-3">Prochaine Séance</h2>
+        <button
+          onClick={() => setShowSessionSelector(true)}
+          className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-bold py-4 rounded-xl transition shadow-lg hover:shadow-xl"
+        >
+          🚀 Lancer l'entraînement
+        </button>
+      </div>
+
+      {/* Motivation Quote */}
+      <div className="bg-gradient-to-r from-purple-900/20 to-pink-900/20 border border-purple-500/50 rounded-xl p-4">
+        <p className="text-sm text-gray-300 italic">
+          "La consistance bat la perfection. Chaque séance te rapproche de tes objectifs. 💪"
+        </p>
+      </div>
     </div>
   );
 }
