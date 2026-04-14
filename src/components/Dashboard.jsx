@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Fire, Award, TrendingUp, Calendar } from 'lucide-react';
+import { Flame, Award, TrendingUp, Calendar } from 'lucide-react';
 import { planMap } from '../data/workoutPlans.js';
 import SessionSelector from './SessionSelector.jsx';
 
@@ -51,6 +51,8 @@ export default function Dashboard({ store }) {
     return current;
   }, [completed]);
 
+  const { totalVolume, totalSessions, avgSessionVolume, totalSets } = stats;
+
   // Calculer badges
   const badges = useMemo(() => {
     const earned = [];
@@ -64,9 +66,7 @@ export default function Dashboard({ store }) {
     if (Math.round(totalVolume) >= 50000) earned.push({ name: '🌊 Volume King', desc: '50k kg levés' });
 
     return earned;
-  }, [completed, totalSessions, streak]);
-
-  const { totalVolume, totalSessions, avgSessionVolume, totalSets } = stats;
+  }, [totalSessions, totalVolume, streak]);
 
   if (showSessionSelector) {
     return <SessionSelector store={store} onBack={() => setShowSessionSelector(false)} />;
@@ -87,7 +87,7 @@ export default function Dashboard({ store }) {
         {/* Streak */}
         <div className="bg-gradient-to-br from-red-600/20 to-orange-600/20 border border-orange-500/50 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-2">
-            <Fire className="w-5 h-5 text-orange-400" />
+            <Flame className="w-5 h-5 text-orange-400" />
             <span className="text-xs text-gray-400 font-bold">STREAK</span>
           </div>
           <p className="text-3xl font-black text-orange-400">{streak}</p>
