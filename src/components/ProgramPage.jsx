@@ -1,17 +1,147 @@
 import { useState } from 'react';
-import { ChevronLeft, Play } from 'lucide-react';
+import { ChevronLeft, Play, Plus, Trash2, Edit2, BarChart2 } from 'lucide-react';
 import { planMap, planOrder } from '../data/workoutPlans.js';
 import { exerciseMap } from '../data/exercises.js';
 import { bonusSessionTemplates } from '../data/bonusTemplates.js';
+import { estimate1RM } from '../utils/calculations.js';
 import SessionPreview from './SessionPreview.jsx';
+import CustomProgramCreator from './CustomProgramCreator.jsx';
+import ExerciseCustomizer from './ExerciseCustomizer.jsx';
 
+// ── Stats par programme (avant lancement) ────────────────────────────────────
+function ProgramStats({ program, sessions, onLaunch, onBack }) {
+  const completed = sessions.filter(s => s?.status === 'completed');
+
+  const getExStats = (exerciseId, exerciseName) => {
+    const allSets = completed
+      .flatMap(s => (s.exercises || []).filter(e => e.exerciseId === exerciseId).flatMap(e => e.sets || []));
+
+    if (allSets.length === 0) return null;
+
+    const best1RM = Math.max(...allSets.map(s => estimate1RM(s.weight || 0, s.reps || 0)));
+    const totalVolume = allSets.reduce((sum, s) => sum + (s.weight || 0) * (s.reps || 0), 0);
+    const timesCompleted = completed.filter(s =>
+      (s.exercises || []).some(e => e.exerciseId === exerciseId && (e.sets || []).length > 0)
+    ).length;
+
+    const lastSession = completed
+      .filter(s => (s.exercises || []).some(e => e.exerciseId === exerciseId && (e.sets || []).length > 0))
+      .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+
+    const lastEx = lastSession?.exercises?.find(e => e.exerciseId === exerciseId);
+    const lastSet = lastEx?.sets?.[0];
+
+    return { best1RM, totalVolume, timesCompleted, lastSet };
+  };
+
+  return (
+    <div className="p-6 pb-24 bg-gray-950 min-h-screen">
+      <button onClick={onBack} className="flex items-center gap-1 text-blue-400 hover:text-blue-300 font-bold mb-6">
+        <ChevronLeft className="w-5 h-5" /> Retour
+      </button>
+      <h1 className="text-2xl font-black text-white mb-1">{program.name}</h1>
+      <p className="text-gray-400 text-sm mb-6">Statistiques • Créé le {program.createdAt}</p>
+
+      <div className="space-y-4 mb-8">
+        {program.exercises.map((ex, idx) => {
+          const stats = getExStats(ex.exerciseId, ex.exerciseName);
+          return (
+            <div key={idx} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+              <p className="font-bold text-white mb-1">{ex.exerciseName}</p>
+              <p className="text-xs text-gray-500 mb-3">{ex.sets.length} séries planifiées · {ex.muscleGroup}</p>
+              {stats ? (
+                <div className="grid grid-cols-2 gap-2">
+                  {stats.lastSet && (
+                    <div className="bg-gray-800/50 rounded-lg p-2">
+                      <p className="text-xs text-gray-500">Dernier</p>
+                      <p className="text-sm font-bold text-white">{stats.lastSet.weight}kg × {stats.lastSet.reps}</p>
+                    </div>
+                  )}
+                  <div className="bg-gray-800/50 rounded-lg p-2">
+                    <p className="text-xs text-gray-500">1RM estimé</p>
+                    <p className="text-sm font-bold text-green-400">{stats.best1RM} kg</p>
+                  </div>
+                  <div className="bg-gray-800/50 rounded-lg p-2">
+                    <p className="text-xs text-gray-500">Fois complété</p>
+                    <p className="text-sm font-bold text-blue-400">{stats.timesCompleted}×</p>
+                  </div>
+                  <div className="bg-gray-800/50 rounded-lg p-2">
+                    <p className="text-xs text-gray-500">Volume total</p>
+                    <p className="text-sm font-bold text-purple-400">{(stats.totalVolume / 1000).toFixed(1)}k kg</p>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-600 italic">Aucune donnée encore</p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <button
+        onClick={onLaunch}
+        className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-bold py-4 rounded-xl transition shadow-lg text-lg"
+      >
+        🚀 Lancer la séance
+      </button>
+    </div>
+  );
+}
+
+// ── Main Component ────────────────────────────────────────────────────────────
 export default function ProgramPage({ store }) {
   const [activeTab, setActiveTab] = useState('standard');
   const [previewSession, setPreviewSession] = useState(null);
+  const [view, setView] = useState('list'); // 'list' | 'create-program' | 'create-exercise' | 'program-stats'
+  const [selectedProgram, setSelectedProgram] = useState(null);
 
   if (!store) {
     console.error('ProgramPage: store is undefined!');
     return <div className="p-6 text-red-400">Erreur: store non disponible</div>;
+  }
+
+  const { customPrograms = [], customExercises = [], sessions = [] } = store;
+
+  // ── Vues spéciales ─────────────────────────────────────────────────────────
+  if (view === 'create-program') {
+    return (
+      <CustomProgramCreator
+        customExercises={customExercises}
+        onSave={(program) => {
+          store.saveCustomProgram(program);
+          setView('list');
+          setActiveTab('perso');
+        }}
+        onBack={() => setView('list')}
+      />
+    );
+  }
+
+  if (view === 'create-exercise') {
+    return (
+      <ExerciseCustomizer
+        onSave={(exercise) => {
+          store.saveCustomExercise(exercise);
+          setView('list');
+        }}
+        onBack={() => setView('list')}
+      />
+    );
+  }
+
+  if (view === 'program-stats' && selectedProgram) {
+    return (
+      <ProgramStats
+        program={selectedProgram}
+        sessions={sessions}
+        onLaunch={() => {
+          store.startCustomProgram(selectedProgram);
+          setView('list');
+          setSelectedProgram(null);
+        }}
+        onBack={() => { setView('list'); setSelectedProgram(null); }}
+      />
+    );
   }
 
   if (previewSession) {
@@ -37,33 +167,31 @@ export default function ProgramPage({ store }) {
   return (
     <div className="p-6 pb-20">
       <div className="flex items-center mb-6">
-        <ChevronLeft className="w-6 h-6 mr-2 cursor-pointer hover:text-blue-400" />
         <h1 className="text-3xl font-bold">Mon Programme</h1>
       </div>
 
-      <div className="flex gap-3 mb-6">
-        <button
-          onClick={() => setActiveTab('standard')}
-          className={`flex-1 py-2 rounded font-bold transition ${
-            activeTab === 'standard'
-              ? 'bg-blue-600 text-white'
-              : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-          }`}
-        >
-          Standard
-        </button>
-        <button
-          onClick={() => setActiveTab('bonus')}
-          className={`flex-1 py-2 rounded font-bold transition ${
-            activeTab === 'bonus'
-              ? 'bg-blue-600 text-white'
-              : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-          }`}
-        >
-          Bonus ({bonusSessionTemplates.length})
-        </button>
+      {/* Tabs */}
+      <div className="flex gap-2 mb-6 overflow-x-auto">
+        {[
+          { id: 'standard', label: 'Standard' },
+          { id: 'bonus', label: `Bonus (${bonusSessionTemplates.length})` },
+          { id: 'perso', label: `Perso (${customPrograms.length})` },
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex-shrink-0 px-4 py-2 rounded font-bold transition ${
+              activeTab === tab.id
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
+      {/* Standard */}
       {activeTab === 'standard' && (
         <div className="space-y-4">
           {planOrder.map((planId) => {
@@ -72,16 +200,14 @@ export default function ProgramPage({ store }) {
               <div key={planId} className="bg-gray-900 rounded-lg p-4 border border-gray-800">
                 <h3 className="text-lg font-bold mb-1 text-white">{plan.name}</h3>
                 <p className="text-sm text-gray-400 mb-4">Focus: {plan.focus}</p>
-                
+
                 <div className="space-y-2 mb-4">
                   {plan.exercises.map((ex, idx) => {
                     const exercise = exerciseMap[ex.exerciseId];
                     return (
                       <div key={idx} className="bg-gray-800 rounded px-3 py-2 text-sm">
                         <div className="font-bold text-white">{exercise?.name}</div>
-                        <div className="text-gray-400">
-                          {ex.sets}x{ex.reps} @ RPE {ex.rpe}
-                        </div>
+                        <div className="text-gray-400">{ex.sets}x{ex.reps} @ RPE {ex.rpe}</div>
                       </div>
                     );
                   })}
@@ -99,22 +225,21 @@ export default function ProgramPage({ store }) {
         </div>
       )}
 
+      {/* Bonus */}
       {activeTab === 'bonus' && (
         <div className="space-y-4">
           {bonusSessionTemplates.map((template) => (
             <div key={template.id} className="bg-gray-900 rounded-lg p-4 border border-gray-800">
               <h3 className="text-lg font-bold mb-1 text-white">{template.name}</h3>
               <p className="text-xs text-gray-400 mb-4">{template.description}</p>
-              
+
               <div className="space-y-2 mb-4">
                 {template.exercises.map((ex, idx) => {
                   const exercise = exerciseMap[ex.exerciseId];
                   return (
                     <div key={idx} className="bg-gray-800 rounded px-3 py-2 text-sm">
                       <div className="font-bold text-white">{exercise?.name}</div>
-                      <div className="text-gray-400">
-                        {ex.sets}x{ex.reps} @ RPE {ex.rpe}
-                      </div>
+                      <div className="text-gray-400">{ex.sets}x{ex.reps} @ RPE {ex.rpe}</div>
                     </div>
                   );
                 })}
@@ -128,6 +253,104 @@ export default function ProgramPage({ store }) {
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Perso */}
+      {activeTab === 'perso' && (
+        <div className="space-y-4">
+          {/* Actions */}
+          <div className="flex gap-3">
+            <button
+              onClick={() => setView('create-program')}
+              className="flex-1 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition"
+            >
+              <Plus className="w-4 h-4" /> Créer un programme
+            </button>
+            <button
+              onClick={() => setView('create-exercise')}
+              className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition text-sm"
+            >
+              <Plus className="w-4 h-4" /> Exercice perso
+            </button>
+          </div>
+
+          {/* Exercices custom */}
+          {customExercises.length > 0 && (
+            <div className="bg-gray-900 border border-purple-800/50 rounded-xl p-4">
+              <p className="text-xs font-black text-purple-400 uppercase mb-2">
+                Mes exercices perso ({customExercises.length})
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {customExercises.map(ex => (
+                  <span key={ex.id} className="text-xs bg-purple-900/40 border border-purple-700/50 text-purple-300 px-2 py-1 rounded-full">
+                    {ex.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Liste programmes */}
+          {customPrograms.length === 0 ? (
+            <div className="text-center py-12 text-gray-500">
+              <p className="text-lg mb-2">Aucun programme perso</p>
+              <p className="text-sm">Crée ton premier programme ci-dessus !</p>
+            </div>
+          ) : (
+            customPrograms.map((program) => (
+              <div key={program.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <h3 className="font-bold text-white text-lg">{program.name}</h3>
+                    <p className="text-xs text-gray-500">
+                      {program.exercises.length} exercice{program.exercises.length > 1 ? 's' : ''} · {program.createdAt}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Aperçu exercices */}
+                <div className="space-y-1 mb-4">
+                  {program.exercises.map((ex, idx) => (
+                    <div key={idx} className="text-xs text-gray-400 flex justify-between">
+                      <span>{ex.exerciseName}</span>
+                      <span className="text-gray-600">{ex.sets.length} séries</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Boutons */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setSelectedProgram(program);
+                      setView('program-stats');
+                    }}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg flex items-center justify-center gap-2 transition text-sm"
+                  >
+                    <BarChart2 className="w-4 h-4" /> Stats + Lancer
+                  </button>
+                  <button
+                    onClick={() => store.startCustomProgram(program)}
+                    className="bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-2.5 rounded-lg flex items-center justify-center transition"
+                    title="Lancer directement"
+                  >
+                    <Play className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm(`Supprimer "${program.name}" ?`)) {
+                        store.deleteCustomProgram(program.id);
+                      }
+                    }}
+                    className="bg-gray-800 hover:bg-red-900/50 text-gray-400 hover:text-red-400 font-bold px-3 py-2.5 rounded-lg flex items-center justify-center transition"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       )}
     </div>

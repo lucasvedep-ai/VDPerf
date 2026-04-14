@@ -5,15 +5,18 @@ import { useRestTimer } from '../hooks/useRestTimer.js';
 import { estimate1RM } from '../utils/calculations.js';
 import RestTimer from './RestTimer.jsx';
 
+// Résout le nom d'un exercice: exerciseMap d'abord, sinon le nom stocké dans planExercises
+function resolveExName(planEx) {
+  return exerciseMap[planEx.exerciseId]?.name || planEx.name || planEx.exerciseName || 'Exercice';
+}
+
 export default function ActiveSession({ store, onComplete }) {
   const { activeSession, logSet, removeSet, completeSession, cancelSession, getExerciseHistory } = store;
-  
-  // Use planExercises directly from activeSession
+
   const planExercises = activeSession?.planExercises || [];
   const planName = activeSession?.planName || 'Session';
   const planFocus = activeSession?.planFocus || '';
-  
-  // Guard contre données manquantes
+
   if (!planExercises || planExercises.length === 0) {
     return (
       <div className="min-h-screen bg-gray-950 text-white flex items-center justify-center">
@@ -48,8 +51,7 @@ export default function ActiveSession({ store, onComplete }) {
 
   const currentPlanEx = planExercises[currentExIdx];
   const currentSessionEx = activeSession.exercises?.[currentExIdx];
-  
-  // Guard supplémentaire si currentPlanEx n'existe pas
+
   if (!currentPlanEx) {
     return (
       <div className="min-h-screen bg-gray-950 text-white flex items-center justify-center">
@@ -65,9 +67,14 @@ export default function ActiveSession({ store, onComplete }) {
       </div>
     );
   }
-  
+
   const history = getExerciseHistory(currentPlanEx.exerciseId);
   const lastSession = history[history.length - 1] ?? null;
+
+  // Nombre de séries planifiées (compatible standard et custom)
+  const setsCount = typeof currentPlanEx.sets === 'number'
+    ? currentPlanEx.sets
+    : (Array.isArray(currentPlanEx.sets) ? currentPlanEx.sets.length : 0);
 
   const handleLogSet = () => {
     const weight = parseFloat(setInput.weight);
@@ -75,7 +82,8 @@ export default function ActiveSession({ store, onComplete }) {
     if (!weight || !reps) return;
     const rpe = setInput.rpe ? parseFloat(setInput.rpe) : null;
     logSet(currentPlanEx.exerciseId, { weight, reps, rpe });
-    timer.start(currentPlanEx.rest);
+    const restTime = typeof currentPlanEx.rest === 'number' ? currentPlanEx.rest : 60;
+    timer.start(restTime);
     setSetInput(prev => ({ weight: prev.weight, reps: prev.reps, rpe: '' }));
   };
 
@@ -88,6 +96,8 @@ export default function ActiveSession({ store, onComplete }) {
     cancelSession();
   };
 
+  const currentExName = resolveExName(currentPlanEx);
+
   return (
     <div className="min-h-screen bg-gray-950 text-white flex flex-col">
       {timer.isRunning && <RestTimer timer={timer} />}
@@ -95,7 +105,7 @@ export default function ActiveSession({ store, onComplete }) {
       {/* Header */}
       <div className="bg-gray-900 px-4 py-4 flex items-center justify-between border-b border-gray-800">
         <div>
-          <h1 className="font-bold text-lg">{planName} — {planFocus}</h1>
+          <h1 className="font-bold text-lg">{planName}{planFocus ? ` — ${planFocus}` : ''}</h1>
           <p className="text-gray-400 text-sm tabular-nums">{formatTime(elapsed)}</p>
         </div>
         <div className="flex gap-2">
@@ -118,10 +128,12 @@ export default function ActiveSession({ store, onComplete }) {
       <div className="flex overflow-x-auto gap-2 px-4 py-3 bg-gray-900/50 border-b border-gray-800/50">
         {planExercises.map((ex, i) => {
           const sessionEx = activeSession.exercises?.[i];
-          const done = sessionEx?.sets?.length >= ex.sets;
+          const exSetsCount = typeof ex.sets === 'number' ? ex.sets : (Array.isArray(ex.sets) ? ex.sets.length : 0);
+          const done = (sessionEx?.sets?.length || 0) >= exSetsCount;
+          const name = resolveExName(ex);
           return (
             <button
-              key={ex.exerciseId}
+              key={`${ex.exerciseId}-${i}`}
               onClick={() => setCurrentExIdx(i)}
               className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                 i === currentExIdx
@@ -131,7 +143,7 @@ export default function ActiveSession({ store, onComplete }) {
                   : 'bg-gray-800 text-gray-400 hover:text-gray-200'
               }`}
             >
-              {exerciseMap[ex.exerciseId]?.name.split(' ').slice(0, 2).join(' ')}
+              {name.split(' ').slice(0, 2).join(' ')}
               {done && ' ✓'}
             </button>
           );
@@ -141,9 +153,11 @@ export default function ActiveSession({ store, onComplete }) {
       <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-8">
         {/* Exercise header */}
         <div>
-          <h2 className="text-xl font-bold">{exerciseMap[currentPlanEx.exerciseId]?.name}</h2>
+          <h2 className="text-xl font-bold">{currentExName}</h2>
           <p className="text-gray-400 text-sm mt-0.5">
-            {currentPlanEx.sets} séries × {currentPlanEx.reps} reps · RPE {currentPlanEx.rpe} · Repos {currentPlanEx.rest}s
+            {setsCount} séries × {currentPlanEx.reps} reps
+            {currentPlanEx.rpe ? ` · RPE ${currentPlanEx.rpe}` : ''}
+            {currentPlanEx.rest ? ` · Repos ${currentPlanEx.rest}s` : ''}
           </p>
         </div>
 
@@ -170,8 +184,8 @@ export default function ActiveSession({ store, onComplete }) {
         {/* Set input */}
         <div className="bg-gray-900 rounded-2xl p-4 space-y-4">
           <p className="text-sm font-semibold text-gray-300">
-            Série {currentSessionEx?.sets?.length + 1}
-            {currentSessionEx?.sets?.length < currentPlanEx.sets && ` / ${currentPlanEx.sets}`}
+            Série {(currentSessionEx?.sets?.length || 0) + 1}
+            {(currentSessionEx?.sets?.length || 0) < setsCount && ` / ${setsCount}`}
           </p>
           <div className="grid grid-cols-3 gap-3">
             {[
@@ -203,7 +217,7 @@ export default function ActiveSession({ store, onComplete }) {
         </div>
 
         {/* Logged sets */}
-        {currentSessionEx?.sets?.length > 0 && (
+        {(currentSessionEx?.sets?.length || 0) > 0 && (
           <div>
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
               Séries enregistrées
