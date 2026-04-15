@@ -217,6 +217,25 @@ export function useWorkoutStore() {
     });
   }, [setData]);
 
+  // ── Session history ───────────────────────────────────────────────────────
+  const updateSession = useCallback((sessionId, updatedSession) => {
+    setData(prev => {
+      const sessions = prev.sessions || [];
+      const idx = sessions.findIndex(s => s.id === sessionId);
+      if (idx === -1) return prev;
+      const updated = [...sessions];
+      updated[idx] = updatedSession;
+      return { ...prev, sessions: updated };
+    });
+  }, [setData]);
+
+  const deleteSession = useCallback((sessionId) => {
+    setData(prev => ({
+      ...prev,
+      sessions: (prev.sessions || []).filter(s => s.id !== sessionId),
+    }));
+  }, [setData]);
+
   // ── Import ────────────────────────────────────────────────────────────────
   const importStoreData = useCallback((mergedData) => {
     setData(mergedData);
@@ -245,6 +264,8 @@ export function useWorkoutStore() {
     updateObjective,
     deleteObjective,
     logBodyWeight,
+    updateSession,
+    deleteSession,
     importStoreData,
   };
 }

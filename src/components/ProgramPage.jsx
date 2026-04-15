@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Play, Plus, Trash2, BarChart2, Clock } from 'lucide-react';
+import { Play, Plus, Trash2, BarChart2, Clock, Edit2 } from 'lucide-react';
 import { planMap, planOrder } from '../data/workoutPlans.js';
 import { exerciseMap } from '../data/exercises.js';
 import { bonusSessionTemplates } from '../data/bonusTemplates.js';
@@ -117,6 +117,7 @@ export default function ProgramPage({ store }) {
   const [previewSession, setPreviewSession] = useState(null);
   const [view, setView] = useState('list');
   const [selectedProgram, setSelectedProgram] = useState(null);
+  const [editingProgram, setEditingProgram] = useState(null);
 
   if (!store) return <div className="p-6 text-red-400">Erreur: store non disponible</div>;
 
@@ -128,6 +129,17 @@ export default function ProgramPage({ store }) {
         customExercises={customExercises}
         onSave={(program) => { store.saveCustomProgram(program); setView('list'); setActiveTab('perso'); }}
         onBack={() => setView('list')}
+      />
+    );
+  }
+
+  if (view === 'edit-program' && editingProgram) {
+    return (
+      <CustomProgramCreator
+        customExercises={customExercises}
+        initialProgram={editingProgram}
+        onSave={(program) => { store.saveCustomProgram(program); setView('list'); setEditingProgram(null); }}
+        onBack={() => { setView('list'); setEditingProgram(null); }}
       />
     );
   }
@@ -258,6 +270,13 @@ export default function ProgramPage({ store }) {
                     title="Lancer directement"
                   >
                     <Play className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => { setEditingProgram(program); setView('edit-program'); }}
+                    className="bg-gray-800 hover:bg-blue-900/50 text-gray-400 hover:text-blue-400 px-3 py-2.5 rounded-lg transition"
+                    title="Modifier"
+                  >
+                    <Edit2 className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => { if (confirm(`Supprimer "${program.name}" ?`)) store.deleteCustomProgram(program.id); }}

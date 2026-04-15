@@ -188,12 +188,12 @@ function SetRow({ set, isEditing, onToggleEdit, onChange, onDelete, paramType })
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
-export default function CustomProgramCreator({ customExercises = [], onSave, onBack }) {
-  const [step, setStep] = useState('name'); // 'name' | 'build'
-  const [programName, setProgramName] = useState('');
+export default function CustomProgramCreator({ customExercises = [], onSave, onBack, initialProgram = null }) {
+  const [step, setStep] = useState(initialProgram ? 'build' : 'name'); // 'name' | 'build'
+  const [programName, setProgramName] = useState(initialProgram?.name ?? '');
   const [selectedGroup, setSelectedGroup] = useState(muscleGroups[0]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [programExercises, setProgramExercises] = useState([]);
+  const [programExercises, setProgramExercises] = useState(initialProgram?.exercises ?? []);
   const [quickFillEx, setQuickFillEx] = useState(null);
   const [editingSet, setEditingSet] = useState(null); // { exIdx, setIdx }
   const [nameError, setNameError] = useState('');
@@ -253,9 +253,9 @@ export default function CustomProgramCreator({ customExercises = [], onSave, onB
     if (!programName.trim()) { setNameError('Le nom est obligatoire.'); return; }
     if (programExercises.length === 0) return;
     const program = {
-      id: `prog-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: initialProgram?.id ?? `prog-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       name: programName.trim(),
-      createdAt: new Date().toISOString().split('T')[0],
+      createdAt: initialProgram?.createdAt ?? new Date().toISOString().split('T')[0],
       exercises: programExercises,
     };
     onSave(program);
@@ -268,7 +268,7 @@ export default function CustomProgramCreator({ customExercises = [], onSave, onB
         <button onClick={onBack} className="flex items-center gap-1 text-blue-400 hover:text-blue-300 font-bold mb-6">
           <ChevronLeft className="w-5 h-5" /> Retour
         </button>
-        <h1 className="text-2xl font-black text-white mb-2">Nouveau programme</h1>
+        <h1 className="text-2xl font-black text-white mb-2">{initialProgram ? 'Modifier le programme' : 'Nouveau programme'}</h1>
         <p className="text-gray-400 text-sm mb-8">Donne un nom à ton programme.</p>
 
         <div className="space-y-4">
