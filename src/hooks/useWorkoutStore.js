@@ -1,59 +1,60 @@
 import { useCallback } from 'react';
 import { useLocalStorage } from './useLocalStorage.js';
+import { migrateData, saveAutoBackup } from '../utils/dataManager.js';
 
 const STORAGE_KEY = 'vdperf_data';
+
 const initialState = {
   sessions: [],
   activeSession: null,
   bonusSessionsCustom: [],
   customPrograms: [],
   customExercises: [],
-  objectives: {
-    benchMax: 100,
-    squatMax: 120,
-    deadliftMax: 150,
-    focusArea: 'strength',
-    target6Weeks: {},
-  },
+  bodyWeight: [],
+  objectives: {},
 };
 
+// Transform applied once when reading from localStorage (migration)
+function transformOnLoad(parsed) {
+  if (!parsed) return initialState;
+  return migrateData({ ...initialState, ...parsed });
+}
+
 export function useWorkoutStore() {
-  const [data, setData] = useLocalStorage(STORAGE_KEY, initialState);
+  const [data, setData] = useLocalStorage(STORAGE_KEY, initialState, transformOnLoad);
 
   const startSession = useCallback((sessionId, sessionData) => {
     console.log('🚀 Starting session:', { sessionId, sessionData });
-
     const finalData = sessionData || {};
     const planId = finalData.id || finalData.planId || sessionId;
-
     const session = {
       id: sessionId || Date.now().toString(),
       date: new Date().toISOString().split('T')[0],
-      planId: planId,
+      startTime: new Date().toISOString(),
+      endTime: null,
+      planId,
       planName: finalData.name,
       planFocus: finalData.focus || finalData.type || '',
       planExercises: finalData.exercises || [],
       name: finalData.name || 'Session',
       type: finalData.type || 'standard',
       status: 'in_progress',
-      startTime: Date.now(),
-      endTime: null,
       exercises: (finalData.exercises || []).map(e => ({
         exerciseId: e.exerciseId,
         exerciseName: e.name || e.exerciseName || '',
+        paramType: e.paramType || 'weight',
+        cardioType: e.cardioType || null,
         plannedSets: e.sets,
         plannedReps: e.reps,
         plannedRPE: e.rpe,
         plannedRest: e.rest,
-        sets: []
+        sets: [],
       })),
     };
-
     console.log('✅ Session created:', session);
     setData(prev => ({ ...prev, activeSession: session }));
   }, [setData]);
 
-  // Lance un programme personnalisé (converti dans le bon format)
   const startCustomProgram = useCallback((program) => {
     const sessionData = {
       id: program.id,
@@ -63,14 +64,15 @@ export function useWorkoutStore() {
       exercises: program.exercises.map(ex => ({
         exerciseId: ex.exerciseId,
         name: ex.exerciseName,
+        paramType: ex.paramType || 'weight',
+        cardioType: ex.cardioType || null,
         sets: ex.sets.length,
         reps: ex.sets[0]?.reps || 10,
         rpe: null,
         rest: ex.sets[0]?.restTime || 60,
       })),
     };
-    const sessionId = `${program.id}-${Date.now()}`;
-    startSession(sessionId, sessionData);
+    startSession(`${program.id}-${Date.now()}`, sessionData);
   }, [startSession]);
 
   const logSet = useCallback((exerciseId, set) => {
@@ -104,13 +106,15 @@ export function useWorkoutStore() {
       const completed = {
         ...prev.activeSession,
         status: 'completed',
-        endTime: Date.now()
+        endTime: new Date().toISOString(),
       };
-      return {
+      const newData = {
         ...prev,
-        sessions: [...prev.sessions, completed],
-        activeSession: null
+        sessions: [...(prev.sessions || []), completed],
+        activeSession: null,
       };
+      setTimeout(() => saveAutoBackup(newData), 200);
+      return newData;
     });
   }, [setData]);
 
@@ -119,11 +123,11 @@ export function useWorkoutStore() {
   }, [setData]);
 
   const getExerciseHistory = useCallback((exerciseId) => {
-    return data.sessions
+    return (data.sessions || [])
       .filter(s => s?.status === 'completed')
       .flatMap(s => {
         const ex = s?.exercises?.find(e => e.exerciseId === exerciseId);
-        if (!ex || ex.sets.length === 0) return [];
+        if (!ex || !ex.sets?.length) return [];
         return [{ date: s.date, sets: ex.sets }];
       })
       .sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -131,29 +135,27 @@ export function useWorkoutStore() {
 
   const saveCustomBonusSession = useCallback((bonusSession) => {
     setData(prev => {
-      const existing = (prev.bonusSessionsCustom || []).findIndex(s => s.id === bonusSession.id);
-      if (existing !== -1) {
-        const updated = [...prev.bonusSessionsCustom];
-        updated[existing] = bonusSession;
+      const list = prev.bonusSessionsCustom || [];
+      const idx = list.findIndex(s => s.id === bonusSession.id);
+      if (idx !== -1) {
+        const updated = [...list];
+        updated[idx] = bonusSession;
         return { ...prev, bonusSessionsCustom: updated };
       }
-      return { ...prev, bonusSessionsCustom: [...(prev.bonusSessionsCustom || []), bonusSession] };
+      return { ...prev, bonusSessionsCustom: [...list, bonusSession] };
     });
   }, [setData]);
 
-  const getCustomBonusSessions = useCallback(() => {
-    return data.bonusSessionsCustom || [];
-  }, [data.bonusSessionsCustom]);
+  const getCustomBonusSessions = useCallback(() => data.bonusSessionsCustom || [], [data.bonusSessionsCustom]);
 
-  // ── Programmes personnalisés ──────────────────────────────────────────────
-
+  // ── Custom Programs ───────────────────────────────────────────────────────
   const saveCustomProgram = useCallback((program) => {
     setData(prev => {
       const programs = prev.customPrograms || [];
-      const existingIdx = programs.findIndex(p => p.id === program.id);
-      if (existingIdx !== -1) {
+      const idx = programs.findIndex(p => p.id === program.id);
+      if (idx !== -1) {
         const updated = [...programs];
-        updated[existingIdx] = program;
+        updated[idx] = program;
         return { ...prev, customPrograms: updated };
       }
       return { ...prev, customPrograms: [...programs, program] };
@@ -167,23 +169,57 @@ export function useWorkoutStore() {
     }));
   }, [setData]);
 
-  // ── Exercices personnalisés ───────────────────────────────────────────────
-
+  // ── Custom Exercises ──────────────────────────────────────────────────────
   const saveCustomExercise = useCallback((exercise) => {
     setData(prev => {
-      const exercises = prev.customExercises || [];
-      const existingIdx = exercises.findIndex(e => e.id === exercise.id);
-      if (existingIdx !== -1) {
-        const updated = [...exercises];
-        updated[existingIdx] = exercise;
+      const exs = prev.customExercises || [];
+      const idx = exs.findIndex(e => e.id === exercise.id);
+      if (idx !== -1) {
+        const updated = [...exs];
+        updated[idx] = exercise;
         return { ...prev, customExercises: updated };
       }
-      return { ...prev, customExercises: [...exercises, exercise] };
+      return { ...prev, customExercises: [...exs, exercise] };
     });
   }, [setData]);
 
-  const updateObjectives = useCallback((objectives) => {
-    setData(prev => ({ ...prev, objectives: { ...prev.objectives, ...objectives } }));
+  // ── Objectives { [exerciseId]: targetWeight } ─────────────────────────────
+  const updateObjective = useCallback((exerciseId, weight) => {
+    setData(prev => ({
+      ...prev,
+      objectives: { ...(prev.objectives || {}), [exerciseId]: weight },
+    }));
+  }, [setData]);
+
+  const deleteObjective = useCallback((exerciseId) => {
+    setData(prev => {
+      const { [exerciseId]: _removed, ...rest } = prev.objectives || {};
+      return { ...prev, objectives: rest };
+    });
+  }, [setData]);
+
+  // ── Body Weight ───────────────────────────────────────────────────────────
+  const logBodyWeight = useCallback((entry) => {
+    setData(prev => {
+      const bw = prev.bodyWeight || [];
+      const idx = bw.findIndex(b => b.date === entry.date);
+      let updated;
+      if (idx !== -1) {
+        updated = [...bw];
+        updated[idx] = entry;
+      } else {
+        updated = [entry, ...bw];
+      }
+      return {
+        ...prev,
+        bodyWeight: updated.sort((a, b) => new Date(b.date) - new Date(a.date)),
+      };
+    });
+  }, [setData]);
+
+  // ── Import ────────────────────────────────────────────────────────────────
+  const importStoreData = useCallback((mergedData) => {
+    setData(mergedData);
   }, [setData]);
 
   return {
@@ -192,7 +228,8 @@ export function useWorkoutStore() {
     bonusSessionsCustom: data.bonusSessionsCustom || [],
     customPrograms: data.customPrograms || [],
     customExercises: data.customExercises || [],
-    objectives: data.objectives,
+    bodyWeight: data.bodyWeight || [],
+    objectives: data.objectives || {},
     startSession,
     startCustomProgram,
     logSet,
@@ -205,6 +242,9 @@ export function useWorkoutStore() {
     saveCustomProgram,
     deleteCustomProgram,
     saveCustomExercise,
-    updateObjectives,
+    updateObjective,
+    deleteObjective,
+    logBodyWeight,
+    importStoreData,
   };
 }

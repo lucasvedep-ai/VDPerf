@@ -36,7 +36,7 @@ export default function ActiveSession({ store, onComplete }) {
   const timer = useRestTimer();
 
   const [currentExIdx, setCurrentExIdx] = useState(0);
-  const [setInput, setSetInput] = useState({ weight: '', reps: '', rpe: '' });
+  const [setInput, setSetInput] = useState({ weight: '', reps: '', rpe: '', duration: '', distance: '', value: '' });
   const [elapsed, setElapsed] = useState(0);
   const [showConfirmCancel, setShowConfirmCancel] = useState(false);
 
@@ -76,15 +76,41 @@ export default function ActiveSession({ store, onComplete }) {
     ? currentPlanEx.sets
     : (Array.isArray(currentPlanEx.sets) ? currentPlanEx.sets.length : 0);
 
+  const paramType = currentSessionEx?.paramType || 'weight';
+  const cardioType = currentSessionEx?.cardioType || null;
+
   const handleLogSet = () => {
-    const weight = parseFloat(setInput.weight);
-    const reps = parseInt(setInput.reps, 10);
-    if (!weight || !reps) return;
-    const rpe = setInput.rpe ? parseFloat(setInput.rpe) : null;
-    logSet(currentPlanEx.exerciseId, { weight, reps, rpe });
+    let setData = {};
+    let valid = false;
+
+    if (paramType === 'weight') {
+      const weight = parseFloat(setInput.weight);
+      const reps = parseInt(setInput.reps, 10);
+      if (!weight || !reps) return;
+      setData = { weight, reps, rpe: setInput.rpe ? parseFloat(setInput.rpe) : null };
+      valid = true;
+    } else if (paramType === 'reps') {
+      const reps = parseInt(setInput.reps, 10);
+      if (!reps) return;
+      setData = { reps };
+      valid = true;
+    } else if (paramType === 'time') {
+      const duration = parseInt(setInput.duration, 10);
+      if (!duration) return;
+      setData = { duration };
+      valid = true;
+    } else if (paramType === 'cardio') {
+      const value = parseFloat(setInput.value);
+      if (!value) return;
+      setData = { cardioType, value };
+      valid = true;
+    }
+
+    if (!valid) return;
+    logSet(currentPlanEx.exerciseId, setData);
     const restTime = typeof currentPlanEx.rest === 'number' ? currentPlanEx.rest : 60;
     timer.start(restTime);
-    setSetInput(prev => ({ weight: prev.weight, reps: prev.reps, rpe: '' }));
+    setSetInput(prev => ({ ...prev, rpe: '', duration: '', value: '' }));
   };
 
   const handleComplete = () => {
@@ -187,29 +213,89 @@ export default function ActiveSession({ store, onComplete }) {
             Série {(currentSessionEx?.sets?.length || 0) + 1}
             {(currentSessionEx?.sets?.length || 0) < setsCount && ` / ${setsCount}`}
           </p>
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { key: 'weight', label: 'Poids (kg)', placeholder: '80', step: '2.5' },
-              { key: 'reps', label: 'Reps', placeholder: '8', step: '1' },
-              { key: 'rpe', label: 'RPE', placeholder: '8', step: '0.5' },
-            ].map(({ key, label, placeholder, step }) => (
-              <div key={key}>
-                <label className="text-xs text-gray-500 mb-1 block">{label}</label>
-                <input
-                  type="number"
-                  step={step}
-                  value={setInput[key]}
-                  onChange={e => setSetInput(p => ({ ...p, [key]: e.target.value }))}
-                  className="w-full bg-gray-800 rounded-xl px-3 py-3 text-center text-lg font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  placeholder={placeholder}
-                  inputMode="decimal"
-                />
-              </div>
-            ))}
-          </div>
+
+          {/* Weight type: weight + reps + RPE */}
+          {paramType === 'weight' && (
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { key: 'weight', label: 'Poids (kg)', placeholder: '80', step: '2.5' },
+                { key: 'reps', label: 'Reps', placeholder: '8', step: '1' },
+                { key: 'rpe', label: 'RPE', placeholder: '8', step: '0.5' },
+              ].map(({ key, label, placeholder, step }) => (
+                <div key={key}>
+                  <label className="text-xs text-gray-500 mb-1 block">{label}</label>
+                  <input
+                    type="number"
+                    step={step}
+                    value={setInput[key]}
+                    onChange={e => setSetInput(p => ({ ...p, [key]: e.target.value }))}
+                    className="w-full bg-gray-800 rounded-xl px-3 py-3 text-center text-lg font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder={placeholder}
+                    inputMode="decimal"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Reps only */}
+          {paramType === 'reps' && (
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Répétitions</label>
+              <input
+                type="number"
+                step="1"
+                value={setInput.reps}
+                onChange={e => setSetInput(p => ({ ...p, reps: e.target.value }))}
+                className="w-full bg-gray-800 rounded-xl px-3 py-3 text-center text-2xl font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="15"
+                inputMode="numeric"
+              />
+            </div>
+          )}
+
+          {/* Time (seconds) */}
+          {paramType === 'time' && (
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Durée (secondes)</label>
+              <input
+                type="number"
+                step="5"
+                value={setInput.duration}
+                onChange={e => setSetInput(p => ({ ...p, duration: e.target.value }))}
+                className="w-full bg-gray-800 rounded-xl px-3 py-3 text-center text-2xl font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="60"
+                inputMode="numeric"
+              />
+            </div>
+          )}
+
+          {/* Cardio */}
+          {paramType === 'cardio' && (
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">
+                {cardioType === 'duration' ? 'Durée (min)' : cardioType === 'distance' ? 'Distance (km)' : 'Répétitions'}
+              </label>
+              <input
+                type="number"
+                step={cardioType === 'distance' ? '0.5' : '1'}
+                value={setInput.value}
+                onChange={e => setSetInput(p => ({ ...p, value: e.target.value }))}
+                className="w-full bg-gray-800 rounded-xl px-3 py-3 text-center text-2xl font-bold focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                placeholder={cardioType === 'duration' ? '30' : cardioType === 'distance' ? '5' : '50'}
+                inputMode="decimal"
+              />
+            </div>
+          )}
+
           <button
             onClick={handleLogSet}
-            disabled={!setInput.weight || !setInput.reps}
+            disabled={
+              (paramType === 'weight' && (!setInput.weight || !setInput.reps)) ||
+              (paramType === 'reps' && !setInput.reps) ||
+              (paramType === 'time' && !setInput.duration) ||
+              (paramType === 'cardio' && !setInput.value)
+            }
             className="w-full bg-indigo-600 disabled:bg-gray-800 disabled:text-gray-600 text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
           >
             <Plus size={18} /> Enregistrer la série
@@ -224,7 +310,20 @@ export default function ActiveSession({ store, onComplete }) {
             </p>
             <div className="space-y-2">
               {currentSessionEx.sets.map((set, i) => {
-                const e1rm = estimate1RM(set.weight, set.reps);
+                let label = '';
+                if (paramType === 'weight') {
+                  const e1rm = estimate1RM(set.weight || 0, set.reps || 0);
+                  label = `${set.weight} kg × ${set.reps}${set.rpe ? ` · RPE ${set.rpe}` : ''} · ≈${e1rm} kg`;
+                } else if (paramType === 'reps') {
+                  label = `× ${set.reps} reps`;
+                } else if (paramType === 'time') {
+                  const mins = Math.floor((set.duration || 0) / 60);
+                  const secs = (set.duration || 0) % 60;
+                  label = `${mins}:${String(secs).padStart(2, '0')}`;
+                } else if (paramType === 'cardio') {
+                  const suffix = set.cardioType === 'duration' ? 'min' : set.cardioType === 'distance' ? 'km' : 'reps';
+                  label = `${set.value} ${suffix}`;
+                }
                 return (
                   <div
                     key={i}
@@ -232,11 +331,7 @@ export default function ActiveSession({ store, onComplete }) {
                   >
                     <div className="flex items-center gap-3 text-sm">
                       <span className="text-gray-600 w-4">#{i + 1}</span>
-                      <span className="font-semibold">{set.weight} kg × {set.reps}</span>
-                      {set.rpe && (
-                        <span className="text-gray-500">RPE {set.rpe}</span>
-                      )}
-                      <span className="text-indigo-400">≈{e1rm} kg</span>
+                      <span className="font-semibold">{label}</span>
                     </div>
                     <button
                       onClick={() => removeSet(currentPlanEx.exerciseId, i)}
